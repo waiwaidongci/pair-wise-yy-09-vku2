@@ -5,13 +5,8 @@ import { useTokenStore } from "../stores/tokenStore";
 
 export default function PreviewPanel() {
   const store = useTokenStore();
-  const value = (id: string, fallback: string) => {
-    for (const tokens of Object.values(store.activeTheme().tokens)) {
-      const found = tokens.find((token) => token.id === id);
-      if (found) return found.value;
-    }
-    return fallback;
-  };
+  // 读取解析后的值（别名已重算），保证预览不停在编辑前的旧值
+  const value = (id: string, fallback: string) => store.resolution().byId[id] ?? fallback;
 
   const ratio = createMemo(() => contrastRatio(value("color-text", "#172033"), value("color-surface", "#fff")));
   const cssVars = createMemo(() => ({

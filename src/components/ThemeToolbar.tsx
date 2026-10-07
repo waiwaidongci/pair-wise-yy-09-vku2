@@ -1,7 +1,7 @@
 import { For, createSignal } from "solid-js";
 import { Select } from "@kobalte/core/select";
 import { useTokenStore } from "../stores/tokenStore";
-import { downloadText, parseImportedTheme, toCssVariables, toSassVariables, toStyleDictionaryJson } from "../utils/exporters";
+import { downloadText, flattenResolved, parseImportedTheme, toCssVariables, toSassVariables, toStyleDictionaryJson } from "../utils/exporters";
 import type { Theme } from "../types/tokens";
 
 export default function ThemeToolbar() {
@@ -12,10 +12,18 @@ export default function ThemeToolbar() {
 
   const exportCurrent = () => {
     const theme = store.activeTheme();
+    const errors = store.resolution().errors;
+    if (errors.length) {
+      const first = errors[0];
+      const detail = first.kind === "missing" ? `引用了不存在的 ${first.ref}` : `引用成环：${first.cycle?.join(" → ")}`;
+      window.alert(`已停在导出前：令牌 ${first.tokenName} ${detail}。请先在“发布对账”页处理全部 ${errors.length} 处引用问题。`);
+      return;
+    }
+    const flat = flattenResolved(theme);
     if (format() === "css") {
-      downloadText(`${theme.id}.css`, toCssVariables(theme), "text/css");
+      downloadText(`${theme.id}.css`, toCssVariables(flat), "text/css");
     } else if (format() === "scss") {
-      downloadText(`${theme.id}.scss`, toSassVariables(theme), "text/x-scss");
+      downloadText(`${theme.id}.scss`, toSassVariables(flat), "text/x-scss");
     } else {
       downloadText(`${theme.id}.tokens.json`, toStyleDictionaryJson(theme), "application/json");
     }

@@ -1,4 +1,5 @@
 import type { DesignToken, Theme, TokenDifference, TokenKind } from "../types/tokens";
+import { resolveTheme } from "./resolution";
 
 export const TOKEN_LABELS: Record<TokenKind, string> = {
   color: "颜色",
@@ -9,33 +10,27 @@ export const TOKEN_LABELS: Record<TokenKind, string> = {
   motion: "动效时长",
 };
 
-export function flattenTheme(theme: Theme): Record<string, string> {
-  const result: Record<string, string> = {};
-  (Object.keys(theme.tokens) as TokenKind[]).forEach((kind) => {
-    theme.tokens[kind].forEach((token) => {
-      result[token.name] = token.value;
-    });
-  });
-  return result;
+/** 解析后的扁平令牌（别名已重算），导出、预览与差异统一使用，避免停在编辑前的旧值 */
+export function flattenResolved(theme: Theme): Record<string, string> {
+  return resolveTheme(theme).byName;
 }
 
-export function toCssVariables(theme: Theme): string {
-  const lines = Object.entries(flattenTheme(theme)).map(([name, value]) => {
-    const variable = name.replace(/\./g, "-").replace(/[^a-zA-Z0-9-_]/g, "-");
-    return `  --${variable}: ${value};`;
-  });
+function cssVariableName(name: string): string {
+  return name.replace(/\./g, "-").replace(/[^a-zA-Z0-9-_]/g, "-");
+}
+
+export function toCssVariables(flat: Record<string, string>): string {
+  const lines = Object.entries(flat).map(([name, value]) => `  --${cssVariableName(name)}: ${value};`);
   return `:root {\n${lines.join("\n")}\n}\n`;
 }
 
-export function toSassVariables(theme: Theme): string {
-  const lines = Object.entries(flattenTheme(theme)).map(([name, value]) => {
-    const variable = name.replace(/\./g, "-").replace(/[^a-zA-Z0-9-_]/g, "-");
-    return `$${variable}: ${value};`;
-  });
+export function toSassVariables(flat: Record<string, string>): string {
+  const lines = Object.entries(flat).map(([name, value]) => `$${cssVariableName(name)}: ${value};`);
   return `${lines.join("\n")}\n`;
 }
 
 export function toStyleDictionaryJson(theme: Theme): string {
+  const resolved = resolveTheme(theme).byId;
   const tree: Record<string, unknown> = {};
   (Object.keys(theme.tokens) as TokenKind[]).forEach((kind) => {
     theme.tokens[kind].forEach((token) => {
@@ -44,7 +39,7 @@ export function toStyleDictionaryJson(theme: Theme): string {
       path.forEach((segment, index) => {
         if (index === path.length - 1) {
           branch[segment] = {
-            value: token.value,
+            value: resolved[token.id] ?? token.value,
             type: kind === "motion" ? "time" : kind === "fontSize" ? "dimension" : kind,
             comment: token.description,
           };
@@ -91,24 +86,26 @@ export function parseImportedTheme(raw: string, fallback: Theme): Theme {
   return next;
 }
 
-export function diffThemes(before: Theme, after: Theme): TokenDifference[] {
-  const left = flattenTheme(before);
-  const right = flattenTheme(after);
-  const names = Array.from(new Set([...Object.keys(left), ...Object.keys(right)])).sort();
+export function diffFlattened(before: Record<string, string>, after: Record<string, string>): TokenDifference[] {
+  const names = Array.from(new Set([...Object.keys(before), ...Object.keys(after)])).sort();
   return names.reduce<TokenDifference[]>((differences, path) => {
-    if (!(path in left)) {
-      differences.push({ path, before: "未定义", after: right[path], kind: "added" });
+    if (!(path in before)) {
+      differences.push({ path, before: "未定义", after: after[path], kind: "added" });
       return differences;
     }
-    if (!(path in right)) {
-      differences.push({ path, before: left[path], after: "已移除", kind: "removed" });
+    if (!(path in after)) {
+      differences.push({ path, before: before[path], after: "已移除", kind: "removed" });
       return differences;
     }
-    if (left[path] !== right[path]) {
-      differences.push({ path, before: left[path], after: right[path], kind: "changed" });
+    if (before[path] !== after[path]) {
+      differences.push({ path, before: before[path], after: after[path], kind: "changed" });
     }
     return differences;
   }, []);
+}
+
+export function diffThemes(before: Theme, after: Theme): TokenDifference[] {
+  return diffFlattened(flattenResolved(before), flattenResolved(after));
 }
 
 export function tokenToCss(token: DesignToken): string {

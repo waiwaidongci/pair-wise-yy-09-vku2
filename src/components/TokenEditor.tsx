@@ -1,7 +1,9 @@
 import { For, Show, createMemo } from "solid-js";
+import { A } from "@solidjs/router";
 import { Tabs } from "@kobalte/core/tabs";
 import type { DesignToken, TokenKind } from "../types/tokens";
 import { TOKEN_LABELS } from "../utils/exporters";
+import { extractRefs } from "../utils/resolution";
 import { contrastGrade, contrastRatio } from "../utils/color";
 import { useTokenStore } from "../stores/tokenStore";
 
@@ -10,10 +12,13 @@ const kinds: TokenKind[] = ["color", "fontSize", "spacing", "radius", "shadow", 
 function TokenRow(props: { token: DesignToken; kind: TokenKind }) {
   const store = useTokenStore();
   const isColor = () => props.kind === "color";
+  const resolved = () => store.resolution().byId[props.token.id] ?? props.token.value;
+  const isAlias = () => extractRefs(props.token.value).length > 0;
+  const error = createMemo(() => store.resolution().errors.find((item) => item.tokenId === props.token.id));
   const ratio = createMemo(() => {
     if (!isColor()) return 0;
-    const background = store.activeTheme().tokens.color.find((token) => token.id === "color-surface")?.value ?? "#fff";
-    return contrastRatio(props.token.value, background);
+    const background = store.resolution().byName["color.surface.default"] ?? "#ffffff";
+    return contrastRatio(resolved(), background);
   });
 
   return (
@@ -24,19 +29,30 @@ function TokenRow(props: { token: DesignToken; kind: TokenKind }) {
           value={props.token.name}
           onInput={(event) => store.updateToken(props.kind, props.token.id, { name: event.currentTarget.value })}
         />
-        <p class="mt-1 line-clamp-1 px-2 text-[11px] text-slate-400">{props.token.description}</p>
+        <div class="mt-1 flex items-center gap-1.5 px-2">
+          <p class="line-clamp-1 text-[11px] text-slate-400">{props.token.description}</p>
+          <Show when={isAlias()}>
+            <span class="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-600">别名</span>
+          </Show>
+          <Show when={props.token.override}>
+            <span class="shrink-0 rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-600">覆盖</span>
+          </Show>
+          <Show when={props.token.pendingReview}>
+            <span class="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">待复核</span>
+          </Show>
+        </div>
       </div>
       <div class="flex items-center gap-2">
         <Show when={isColor()}>
           <input
             type="color"
             class="h-8 w-8 shrink-0 cursor-pointer rounded-md border border-slate-200 bg-white p-0.5"
-            value={props.token.value.match(/^#[0-9a-f]{6}$/i) ? props.token.value : "#000000"}
+            value={resolved().match(/^#[0-9a-f]{6}$/i) ? resolved() : "#000000"}
             onInput={(event) => store.updateToken(props.kind, props.token.id, { value: event.currentTarget.value })}
           />
         </Show>
         <input
-          class="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs outline-none focus:border-blue-400"
+          class={`min-w-0 flex-1 rounded-md border bg-white px-2 py-1.5 font-mono text-xs outline-none focus:border-blue-400 ${error() ? "border-rose-300 bg-rose-50/50" : "border-slate-200"}`}
           value={props.token.value}
           onInput={(event) => store.updateToken(props.kind, props.token.id, { value: event.currentTarget.value })}
         />
@@ -48,6 +64,20 @@ function TokenRow(props: { token: DesignToken; kind: TokenKind }) {
       >
         ×
       </button>
+      <Show when={isAlias() || error()}>
+        <div class="col-span-2 col-start-1 flex items-center gap-2 px-2 text-[11px]">
+          <Show when={isAlias()}>
+            <span class="text-slate-400">
+              已重算 → <code class="font-mono font-semibold text-slate-600">{resolved()}</code>
+            </span>
+          </Show>
+          <Show when={error()}>
+            <span class="font-semibold text-rose-600">
+              {error()!.kind === "missing" ? `引用断裂：${error()!.ref} 不存在` : `引用成环：${error()!.cycle?.join(" → ")}`}
+            </span>
+          </Show>
+        </div>
+      </Show>
       <Show when={isColor()}>
         <div class="col-span-2 col-start-2 flex items-center justify-between rounded-md bg-slate-50 px-2 py-1">
           <span class="text-[11px] text-slate-500">对比度 {ratio().toFixed(2)}:1</span>
@@ -66,22 +96,44 @@ function TokenRow(props: { token: DesignToken; kind: TokenKind }) {
 
 export default function TokenEditor() {
   const store = useTokenStore();
+  const errorCount = createMemo(() => store.resolution().errors.length);
+  const reviewCount = createMemo(
+    () =>
+      (Object.keys(store.activeTheme().tokens) as TokenKind[]).reduce(
+        (count, kind) => count + store.activeTheme().tokens[kind].filter((token) => token.pendingReview).length,
+        0,
+      ),
+  );
   return (
     <section class="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
       <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
         <div>
           <h2 class="text-sm font-bold text-slate-800">令牌编辑器</h2>
-          <p class="text-xs text-slate-400">修改会实时写入当前主题</p>
+          <p class="text-xs text-slate-400">
+            支持 <code class="rounded bg-slate-100 px-1 font-mono text-[11px]">{"{color.brand.primary}"}</code> 引用，改动实时重算
+          </p>
         </div>
-        <button
-          class="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
-          onClick={() => {
-            const label = window.prompt("快照名称", `${store.activeTheme().name} ${new Date().toLocaleTimeString("zh-CN")}`);
-            if (label !== null) store.saveSnapshot(label);
-          }}
-        >
-          保存快照
-        </button>
+        <div class="flex items-center gap-2">
+          <Show when={errorCount() > 0}>
+            <A href="/reconcile" class="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-200">
+              {errorCount()} 处引用问题
+            </A>
+          </Show>
+          <Show when={reviewCount() > 0}>
+            <A href="/reconcile" class="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700 hover:bg-amber-200">
+              {reviewCount()} 枚待复核
+            </A>
+          </Show>
+          <button
+            class="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
+            onClick={() => {
+              const label = window.prompt("快照名称", `${store.activeTheme().name} ${new Date().toLocaleTimeString("zh-CN")}`);
+              if (label !== null) store.saveSnapshot(label);
+            }}
+          >
+            保存快照
+          </button>
+        </div>
       </div>
 
       <Tabs defaultValue="color" class="flex min-h-0 flex-1 flex-col">
