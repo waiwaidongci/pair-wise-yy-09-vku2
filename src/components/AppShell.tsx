@@ -28,6 +28,12 @@ export default function AppShell(props: { children: JSX.Element }) {
             >
               版本差异
             </A>
+            <A
+              href="/reconcile"
+              class={`rounded-md px-3 py-1.5 text-xs font-bold ${location.pathname === "/reconcile" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+            >
+              对账发布
+            </A>
           </nav>
           <div class="ml-auto">
             <ThemeToolbar />

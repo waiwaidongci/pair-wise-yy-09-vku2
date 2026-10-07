@@ -8,7 +8,7 @@ export default function PreviewPanel() {
   const value = (id: string, fallback: string) => {
     for (const tokens of Object.values(store.activeTheme().tokens)) {
       const found = tokens.find((token) => token.id === id);
-      if (found) return found.value;
+      if (found) return found.resolvedValue;
     }
     return fallback;
   };

@@ -13,7 +13,7 @@ export function flattenTheme(theme: Theme): Record<string, string> {
   const result: Record<string, string> = {};
   (Object.keys(theme.tokens) as TokenKind[]).forEach((kind) => {
     theme.tokens[kind].forEach((token) => {
-      result[token.name] = token.value;
+      result[token.name] = token.resolvedValue;
     });
   });
   return result;
@@ -44,7 +44,7 @@ export function toStyleDictionaryJson(theme: Theme): string {
       path.forEach((segment, index) => {
         if (index === path.length - 1) {
           branch[segment] = {
-            value: token.value,
+            value: token.resolvedValue,
             type: kind === "motion" ? "time" : kind === "fontSize" ? "dimension" : kind,
             comment: token.description,
           };

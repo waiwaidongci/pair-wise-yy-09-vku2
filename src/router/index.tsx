@@ -3,6 +3,7 @@ import AppShell from "../components/AppShell";
 import TokenEditor from "../components/TokenEditor";
 import PreviewPanel from "../components/PreviewPanel";
 import ComparePanel from "../components/ComparePanel";
+import ReconcilePanel from "../components/ReconcilePanel";
 
 function WorkspacePage() {
   return (
@@ -18,6 +19,7 @@ export default function AppRouter() {
     <Router root={(props) => <AppShell>{props.children}</AppShell>}>
       <Route path="/" component={WorkspacePage} />
       <Route path="/compare" component={ComparePanel} />
+      <Route path="/reconcile" component={ReconcilePanel} />
     </Router>
   );
 }
